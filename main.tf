@@ -1,0 +1,175 @@
+# Configure the AWS Provider
+provider "aws" {
+  region = "ap-northeast-2"
+}
+
+resource "aws_iam_user" "admin_user" {
+  name = "admin"
+  force_destroy = true # Destroys the user when the Terraform resource is deleted
+}
+
+resource "aws_iam_group" "admin_group" {
+  name = "admin-group"
+}
+
+resource "aws_iam_group_policy_attachment" "admin_policy_attachment" {
+  group      = aws_iam_group.admin_group.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+resource "aws_iam_user_group_membership" "admin_user_membership" {
+  user  = aws_iam_user.admin_user.name
+  groups = [aws_iam_group.admin_group.name]
+}
+
+resource "aws_iam_access_key" "admin_user_access_key" {
+  user = aws_iam_user.admin_user.name
+}
+
+resource "aws_iam_user_login_profile" "admin_login" {
+  user                    = aws_iam_user.admin_user.name
+  password_reset_required = true
+}
+
+output "admin_user_access_key" {
+  value     = aws_iam_access_key.admin_user_access_key.id
+  sensitive = true
+}
+
+output "admin_user_secret_key" {
+  value     = aws_iam_access_key.admin_user_access_key.secret
+  sensitive = true
+}
+
+#Retrieve the list of AZs in the current AWS region
+data "aws_availability_zones" "available" {}
+data "aws_region" "current" {}
+
+#Define the VPC
+resource "aws_vpc" "vpc" {
+  cidr_block = var.vpc_cidr
+
+  tags = {
+    Name        = var.vpc_name
+    Environment = "cka_environment"
+    Terraform   = "true"
+    Region      = data.aws_region.current.name
+  }
+}
+
+resource "aws_subnet" "public_subnet" {
+  vpc_id            = aws_vpc.vpc.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "ap-northeast-2a"
+  map_public_ip_on_launch = true # Enables public IPs
+
+  tags = {
+    Name = "cka-public-subnet"
+    Terraform = "true"
+  }
+}
+
+#Create route tables for public subnet
+resource "aws_route_table" "public_route_table" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet_gateway.id
+  }
+  tags = {
+    Name      = "cka_public_rtb"
+    Terraform = "true"
+  }
+}
+
+
+#Create route table associations
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public_route_table.id
+}
+
+#Create Internet Gateway
+resource "aws_internet_gateway" "internet_gateway" {
+  vpc_id = aws_vpc.vpc.id
+  tags = {
+    Name = "cka_igw"
+  }
+}
+
+# Terraform Data Block - To Lookup Latest Ubuntu 20.04 AMI Image
+data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["099720109477"]
+}
+
+# Generate RSA Key Pair
+resource "tls_private_key" "rsa_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# Create AWS Key Pair using Generated RSA Key
+resource "aws_key_pair" "generated_key" {
+  key_name   = "k8s-node"
+  public_key = tls_private_key.rsa_key.public_key_openssh
+}
+
+resource "aws_instance" "cka_ec2_instances" {
+  count         = 3
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.generated_key.key_name
+
+  vpc_security_group_ids = [aws_security_group.cka-security-group.id]
+  subnet_id = aws_subnet.public_subnet.id
+
+  tags = {
+    Name = element(["control-plane", "worker-node-1", "worker-node-2"], count.index)
+  }
+}
+
+# Output Private Key (Save manually)
+output "private_key_pem" {
+  value     = tls_private_key.rsa_key.private_key_pem
+  sensitive = true
+}
+
+output "public_ips" {
+  value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.public_ip }
+}
+
+output "private_ips" {
+  value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.private_ip }
+}
+
+resource "aws_security_group" "cka-security-group" {
+  name        = "web_server_inbound"
+  description = "Allow inbound traffic on ssh/22"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    description = "Allow 22 for ssh connection"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name    = "web_server_inbound"
+    Purpose = "Intro to Resource Blocks Lab"
+  }
+}
