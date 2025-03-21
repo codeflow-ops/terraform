@@ -127,19 +127,33 @@ resource "aws_key_pair" "generated_key" {
   public_key = tls_private_key.rsa_key.public_key_openssh
 }
 
-resource "aws_instance" "cka_ec2_instances" {
-  count         = 3
+resource "aws_instance" "control_plane" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t2.micro"
   key_name      = aws_key_pair.generated_key.key_name
 
-  vpc_security_group_ids = [aws_security_group.cka-security-group.id]
+  vpc_security_group_ids = [aws_security_group.control_plane.id]
   subnet_id = aws_subnet.public_subnet.id
 
   tags = {
-    Name = element(["control-plane", "worker-node-1", "worker-node-2"], count.index)
+    Name = "control-plane"
   }
 }
+
+resource "aws_instance" "worker_nodes" {
+  count         = 2
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.generated_key.key_name
+
+  vpc_security_group_ids = [aws_security_group.worker_nodes.id]
+  subnet_id = aws_subnet.public_subnet.id
+
+  tags = {
+    Name = element(["worker-node-1", "worker-node-2"], count.index)
+  }
+}
+
 
 # Output Private Key (Save manually)
 output "private_key_pem" {
@@ -147,17 +161,38 @@ output "private_key_pem" {
   sensitive = true
 }
 
-output "public_ips" {
-  value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.public_ip }
+output "control_plane_public_ip" {
+  value = aws_instance.control_plane.public_ip
+  description = "The public IP of the control plane instance"
 }
 
-output "private_ips" {
-  value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.private_ip }
+output "worker_nodes_public_ip" {
+   value = { for i, instance in aws_instance.worker_nodes : instance.tags["Name"] => instance.public_ip }
+  description = "The public IP of the worker instance"
 }
 
-resource "aws_security_group" "cka-security-group" {
-  name        = "web_server_inbound"
-  description = "Allow inbound traffic on ssh/22"
+output "control_plane_private_ip" {
+  value = aws_instance.control_plane.public_ip
+  description = "The private IP of the control plane instance"
+}
+
+output "worker_nodes_private_ip" {
+   value = { for i, instance in aws_instance.worker_nodes : instance.tags["Name"] => instance.private_ip }
+  description = "The private IP of the worker instance"
+}
+
+# output "public_ips" {
+#   value = { for i, instance in aws_instance.control_plane : instance.tags["Name"] => instance.public_ip }
+# }
+
+
+# output "private_ips" {
+#   value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.private_ip }
+# }
+
+resource "aws_security_group" "control_plane" {
+  name        = "control-plane-sg"
+  description = "Security group for the control plane"
   vpc_id      = aws_vpc.vpc.id
 
   ingress {
@@ -167,6 +202,84 @@ resource "aws_security_group" "cka-security-group" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+   ingress {
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 2379
+    to_port     = 2380
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 10255
+    to_port     = 10255
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+  resource "aws_security_group" "worker_nodes" {
+  name        = "worker-nodes-sg"
+  description = "Security group for worker nodes"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    description = "Allow 22 for ssh connection"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+ingress {
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
 
   tags = {
     Name    = "web_server_inbound"
