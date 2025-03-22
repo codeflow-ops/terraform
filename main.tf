@@ -124,7 +124,7 @@ resource "aws_key_pair" "generated_key" {
 
 resource "aws_instance" "control_plane" {
   ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
+  instance_type = "t3.medium"
   key_name      = aws_key_pair.generated_key.key_name
 
   vpc_security_group_ids = [aws_security_group.control_plane.id]
@@ -138,7 +138,7 @@ resource "aws_instance" "control_plane" {
 resource "aws_instance" "worker_nodes" {
   count         = 2
   ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
+  instance_type = "t3.medium"
   key_name      = aws_key_pair.generated_key.key_name
 
   vpc_security_group_ids = [aws_security_group.worker_nodes.id]
