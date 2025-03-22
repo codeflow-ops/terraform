@@ -271,6 +271,13 @@ resource "aws_security_group" "control_plane" {
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
+  ingress {
+    from_port   = 8       # ICMP Type 8 (Echo Request)
+    to_port     = 0       # ICMP Code 0
+    protocol    = "icmp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -290,6 +297,22 @@ resource "aws_security_group" "control_plane" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow Cilium agent communication (Hubble Relay)"
+    from_port   = 4240
+    to_port     = 4240
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+  ingress {
+    description = "Cilium VXLAN and Geneve overlay network"
+    from_port   = 8472
+    to_port     = 8472
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
   ingress {
@@ -314,6 +337,13 @@ resource "aws_security_group" "control_plane" {
     to_port     = 32767
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8       # ICMP Type 8 (Echo Request)
+    to_port     = 0       # ICMP Code 0
+    protocol    = "icmp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
   egress {
