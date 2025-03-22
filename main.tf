@@ -104,12 +104,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    values = ["ubuntu/images/*/ubuntu-*-amd64-server-*"]
   }
 
   owners = ["099720109477"]
@@ -166,14 +161,14 @@ output "control_plane_public_ip" {
   description = "The public IP of the control plane instance"
 }
 
+output "control_plane_private_ip" {
+  value = aws_instance.control_plane.private_ip
+  description = "The private IP of the control plane instance"
+}
+
 output "worker_nodes_public_ip" {
    value = { for i, instance in aws_instance.worker_nodes : instance.tags["Name"] => instance.public_ip }
   description = "The public IP of the worker instance"
-}
-
-output "control_plane_private_ip" {
-  value = aws_instance.control_plane.public_ip
-  description = "The private IP of the control plane instance"
 }
 
 output "worker_nodes_private_ip" {
