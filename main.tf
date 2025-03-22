@@ -104,7 +104,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/*/ubuntu-*-amd64-server-*"]
+    values = ["ubuntu/images/*/ubuntu-*-24.*-amd64-server-*"]
   }
 
   owners = ["099720109477"]
