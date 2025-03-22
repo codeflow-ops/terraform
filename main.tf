@@ -104,7 +104,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/*/ubuntu-*-24.*-amd64-server-*"]
+    values = ["ubuntu/images/*/ubuntu-*-22.*-amd64-server-*"]
   }
 
   owners = ["099720109477"]
@@ -198,7 +198,32 @@ resource "aws_security_group" "control_plane" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "Allow etcd server communication"
+    from_port   = 2379
+    to_port     = 2380
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+  ingress {
+    description = "Allow Cilium agent communication (Hubble Relay)"
+    from_port   = 4240
+    to_port     = 4240
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
    ingress {
+    description = "Cilium health check"
+    from_port   = 4244
+    to_port     = 4244
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+  ingress {
+    description = "Allow inbound traffic for Kubernetes API server (kubectl access)"
     from_port   = 6443
     to_port     = 6443
     protocol    = "tcp"
@@ -206,31 +231,44 @@ resource "aws_security_group" "control_plane" {
   }
 
   ingress {
-    from_port   = 2379
-    to_port     = 2380
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description = "Cilium VXLAN and Geneve overlay network"
+    from_port   = 8472
+    to_port     = 8472
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
+
   ingress {
+    description = "Allow kubelet API and health check"
     from_port   = 10250
-    to_port     = 10250
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 10255
     to_port     = 10255
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
   ingress {
-    from_port   = 30000
-    to_port     = 32767
+    description = "Allow kube-controller-manager"
+    from_port   = 10257
+    to_port     = 10257
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+  ingress {
+    description = "Allow kube-scheduler"
+    from_port   = 10259
+    to_port     = 10259
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+  ingress {
+    description = "Cilium WireGuard encryption"
+    from_port   = 51871
+    to_port     = 51871
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
   egress {
@@ -254,14 +292,24 @@ resource "aws_security_group" "control_plane" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-ingress {
+  ingress {
+    description = "Allow kubelet API and health check"
     from_port   = 10250
-    to_port     = 10250
+    to_port     = 10255
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
+
+   ingress {
+    description = "Allow kube-scheduler"
+    from_port   = 10259
+    to_port     = 10259
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
   ingress {
+    description = "NodePort Services"
     from_port   = 30000
     to_port     = 32767
     protocol    = "tcp"
