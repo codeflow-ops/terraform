@@ -156,34 +156,22 @@ output "private_key_pem" {
   sensitive = true
 }
 
-output "control_plane_public_ip" {
-  value = aws_instance.control_plane.public_ip
-  description = "The public IP of the control plane instance"
+output "ssh_commands" {
+  value = {
+    "control-plane" = format("ssh -i ~/.ssh/k8s-node.pem ubuntu@%s", aws_instance.control_plane.public_ip)
+    "worker_nodes"  = { for i, instance in aws_instance.worker_nodes :
+                        instance.tags["Name"] => format("ssh -i ~/.ssh/k8s-node.pem ubuntu@%s", instance.public_ip) }
+  }
+  description = "SSH commands to connect to all nodes (Public IPs)"
 }
 
-output "control_plane_private_ip" {
-  value = aws_instance.control_plane.private_ip
-  description = "The private IP of the control plane instance"
+output "hostnames" {
+  value = join("\n", concat(
+    [format("%s control-plane", aws_instance.control_plane.private_ip)],
+    [for i, instance in aws_instance.worker_nodes : format("%s %s", instance.private_ip, instance.tags["Name"] )]
+  ))
+  description = "hostnames of all nodes (Private IPs)"
 }
-
-output "worker_nodes_public_ip" {
-   value = { for i, instance in aws_instance.worker_nodes : instance.tags["Name"] => instance.public_ip }
-  description = "The public IP of the worker instance"
-}
-
-output "worker_nodes_private_ip" {
-   value = { for i, instance in aws_instance.worker_nodes : instance.tags["Name"] => instance.private_ip }
-  description = "The private IP of the worker instance"
-}
-
-# output "public_ips" {
-#   value = { for i, instance in aws_instance.control_plane : instance.tags["Name"] => instance.public_ip }
-# }
-
-
-# output "private_ips" {
-#   value = { for i, instance in aws_instance.cka_ec2_instances : instance.tags["Name"] => instance.private_ip }
-# }
 
 resource "aws_security_group" "control_plane" {
   name        = "control-plane-sg"
@@ -209,17 +197,9 @@ resource "aws_security_group" "control_plane" {
   ingress {
     description = "Allow Cilium agent communication (Hubble Relay)"
     from_port   = 4240
-    to_port     = 4240
+    to_port     = 4245
     protocol    = "tcp"
-    cidr_blocks = [aws_vpc.vpc.cidr_block]
-  }
-
-   ingress {
-    description = "Cilium health check"
-    from_port   = 4244
-    to_port     = 4244
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.vpc.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -240,9 +220,9 @@ resource "aws_security_group" "control_plane" {
 
 
   ingress {
-    description = "Allow kubelet API and health check"
+    description = "Allow kubelet API"
     from_port   = 10250
-    to_port     = 10255
+    to_port     = 10250
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
@@ -302,9 +282,9 @@ resource "aws_security_group" "control_plane" {
   ingress {
     description = "Allow Cilium agent communication (Hubble Relay)"
     from_port   = 4240
-    to_port     = 4240
+    to_port     = 4245
     protocol    = "tcp"
-    cidr_blocks = [aws_vpc.vpc.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -315,18 +295,26 @@ resource "aws_security_group" "control_plane" {
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
+    ingress {
+    description = "Cilium-agent"
+    from_port   = 9878
+    to_port     = 9901
+    protocol    = "tcp"
+    cidr_blocks = ["127.0.0.1/32"]
+  }
+
   ingress {
-    description = "Allow kubelet API and health check"
+    description = "Allow kubelet API"
     from_port   = 10250
     to_port     = 10255
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
-   ingress {
-    description = "Allow kube-scheduler"
-    from_port   = 10259
-    to_port     = 10259
+  ingress {
+    description = "Allow kube-proxy"
+    from_port   = 10256
+    to_port     = 10256
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
@@ -340,22 +328,23 @@ resource "aws_security_group" "control_plane" {
   }
 
   ingress {
-    from_port   = 8       # ICMP Type 8 (Echo Request)
-    to_port     = 0       # ICMP Code 0
-    protocol    = "icmp"
+    description = "Cilium WireGuard encryption"
+    from_port   = 51871
+    to_port     = 51871
+    protocol    = "udp"
     cidr_blocks = [aws_vpc.vpc.cidr_block]
   }
 
+  ingress {
+    from_port   = 8       # ICMP Type 8 (Echo Request)
+    to_port     = 0      
+    protocol    = "icmp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block]
+  }
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-
-
-  tags = {
-    Name    = "web_server_inbound"
-    Purpose = "Intro to Resource Blocks Lab"
   }
 }
